@@ -2,6 +2,7 @@ package pl.allegro.promo.geecon2015.domain;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import pl.allegro.promo.geecon2015.domain.stats.FinancialStatisticsRepository;
 import pl.allegro.promo.geecon2015.domain.stats.FinancialStats;
 import pl.allegro.promo.geecon2015.domain.transaction.TransactionRepository;
@@ -37,12 +38,27 @@ public class ReportGenerator {
         FinancialStats financialStats = financialStatisticsRepository
                 .listUsersWithMinimalIncome(request.getMinimalIncome(), request.getUsersToCheck());
         for(UUID uuid : financialStats.getUserIds()) {
-            User user = userRepository.detailsOf(uuid);
-            BigDecimal userTransactionSum = transactionRepository.transactionsOf(uuid).getTransactions().stream()
-                    .map(UserTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+            User user = getUserOrElseFallback(uuid);
+            BigDecimal userTransactionSum = getUserTransactionSumOrElseFallback(uuid);
             report.add(new ReportedUser(uuid, user.getName(), userTransactionSum));
         }
         return report;
     }
 
+    private BigDecimal getUserTransactionSumOrElseFallback(UUID uuid) {
+        try {
+            return transactionRepository.transactionsOf(uuid).getTransactions().stream()
+                    .map(UserTransaction::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        }catch (RestClientException ex) {
+            return null;
+        }
+    }
+
+    private User getUserOrElseFallback(UUID uuid) {
+        try {
+            return userRepository.detailsOf(uuid);
+        } catch (RestClientException ex) {
+            return new User(uuid, "<failed>");
+        }
+    }
 }
